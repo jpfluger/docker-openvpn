@@ -91,6 +91,7 @@ usage() {
     echo "                 [-p PUSH ...]"
     echo "                 [-r ROUTE ...]"
     echo "                 [-s SERVER_SUBNET]"
+    echo "                 [-b SERVER_BRIDGE]"
     echo
     echo "optional arguments:"
     echo " -2    Enable two factor authentication using Google Authenticator."
@@ -152,6 +153,7 @@ fi
 
 OVPN_ENV=${OPENVPN}/ovpn_env.sh
 OVPN_SERVER=192.168.255.0/24
+OVPN_SERVER_BRIDGE=''
 OVPN_DEFROUTE=1
 OVPN_NAT=0
 OVPN_DNS=1
@@ -169,10 +171,19 @@ CUSTOM_ROUTE_CONFIG=''
 [ -r "$OVPN_ENV" ] && source "$OVPN_ENV"
 
 # Parse arguments
-while getopts ":a:e:E:C:T:r:s:du:cp:n:DNmf:tz2" opt; do
+while getopts ":a:b:e:E:C:T:r:s:du:cp:n:DNmf:tz2" opt; do
     case $opt in
         a)
             OVPN_AUTH="$OPTARG"
+            ;;
+        b)
+            OVPN_SERVER_BRIDGE="$OPTARG"
+            OVPN_SERVER=''
+            OVPN_NAT=0
+            OVPN_DEFROUTE=0
+            OVPN_DEVICE="tap"
+            #process_route_config "0"
+            [ -z "$CUSTOM_ROUTE_CONFIG" ] && CUSTOM_ROUTE_CONFIG=1
             ;;
         e)
             process_extra_config "$OPTARG"
@@ -280,6 +291,7 @@ export OVPN_COMP_LZO
 export OVPN_OTP_AUTH
 export OVPN_FRAGMENT
 export OVPN_ADDITIONAL_CLIENT_CONFIG
+export OVPN_SERVER_BRIDGE
 
 # Preserve config
 if [ -f "$OVPN_ENV" ]; then
@@ -307,8 +319,17 @@ if [ -f "$conf" ]; then
     mv "$conf" "$bak"
 fi
 
+
+SERVER_OR_BRIDGE="${OVPN_SERVER_BRIDGE}"
+
+if [ -z "${SERVER_OR_BRIDGE}" ]; then
+  SERVER_OR_BRIDGE="server $(getroute $OVPN_SERVER)"
+else
+  SERVER_OR_BRIDGE="server-bridge ${OVPN_SERVER_BRIDGE}"
+fi
+
 cat > "$conf" <<EOF
-server $(getroute $OVPN_SERVER)
+${SERVER_OR_BRIDGE}
 verb 3
 key $EASYRSA_PKI/private/${OVPN_CN}.key
 ca $EASYRSA_PKI/ca.crt
@@ -329,6 +350,7 @@ status /tmp/openvpn-status.log
 user nobody
 group nogroup
 EOF
+
 
 # only block outside dns when we take the default route
 [ "$OVPN_DEFROUTE" == "1" ] && process_push_config "block-outside-dns"
